@@ -3,7 +3,6 @@ import json
 import os
 import sys
 from tkinter import filedialog, Tk
-from .nave import Nave
 from .backtracking import Backtracking
 
 class JuegoMision:
@@ -13,7 +12,7 @@ class JuegoMision:
         # Dimensiones iniciales de la ventana
         self.ANCHO = 1280
         self.ALTO = 720
-        self.ANCHO_BARRA_LATERAL = 300  # Barra lateral más ancha
+        self.ANCHO_BARRA_LATERAL = 300
         self.tamaño_celda = 0  # Nueva variable para el tamaño de celda
         
         # Crear ventana
@@ -74,17 +73,11 @@ class JuegoMision:
         self.offset_objetivo_y = 0
         self.zoom_objetivo = 1.0
         
-        # Buffer de renderizado
-        self.buffer_superficie = None
-        self.ultima_actualizacion = 0
-        self.tiempo_minimo_actualizacion = 1/120  # 120 FPS máximo
-        
         # Cargar iconos
         self.iconos = self._cargar_iconos()
         
         # Estado del juego
         self.datos_nivel = None
-        self.nave = None
         self.mensaje = "Seleccione un archivo de nivel (JSON)"
         self.mensaje_color = self.BLANCO
         self.ruta = None
@@ -150,12 +143,12 @@ class JuegoMision:
             iconos['estrella'] = pygame.image.load(os.path.join(iconos_path, "star.png"))
             iconos['agujero_negro'] = pygame.image.load(os.path.join(iconos_path, "black-hole.png"))
             iconos['gusano'] = pygame.image.load(os.path.join(iconos_path, "teleport.png"))
-            iconos['recarga'] = pygame.image.load(os.path.join(iconos_path, "process.png"))
+            iconos['recarga'] = pygame.image.load(os.path.join(iconos_path, "space-station.png"))
             iconos['meta'] = pygame.image.load(os.path.join(iconos_path, "goal.png"))
             
             # Redimensionar iconos (se ajustará en tiempo de ejecución)
             for key in iconos:
-                iconos[key] = pygame.transform.scale(iconos[key], (48, 48))
+                iconos[key] = pygame.transform.scale(iconos[key], (50, 50))
             
         except Exception as e:
             print(f"Error al cargar iconos: {str(e)}")
@@ -473,6 +466,17 @@ class JuegoMision:
         self.pasos = 0
         self.carga_actual = self.datos_nivel['cargaInicial']
         
+        # Listas para trackear elementos eliminados durante la animación
+        estrellas_eliminadas = []
+        agujeros_eliminados = []
+        poder_disponible = False
+        
+        # Verificar si empieza en una estrella gigante
+        punto_inicial = self.ruta[0]
+        if punto_inicial in self.datos_nivel['estrellasGigantes']:
+            poder_disponible = True
+            estrellas_eliminadas.append(punto_inicial)
+        
         # Calcular offset para centrar la matriz
         offset_x = (self.AREA_MATRIZ.width - (self.tamaño_celda * self.datos_nivel['matriz']['columnas'])) // 2
         offset_y = (self.AREA_MATRIZ.height - (self.tamaño_celda * self.datos_nivel['matriz']['filas'])) // 2
@@ -489,9 +493,25 @@ class JuegoMision:
                         return
             
             punto = self.ruta[i]
+            
+            # Verificar si se mueve hacia un agujero negro para destruirlo
+            es_destruccion_agujero = False
+            if poder_disponible and punto in self.datos_nivel['agujerosNegros'] and punto not in agujeros_eliminados:
+                es_destruccion_agujero = True
+                poder_disponible = False  # Consumir el poder
+                agujeros_eliminados.append(punto)
+            
+            # Verificar si recoge una estrella gigante
+            es_recoleccion_estrella = False
+            if punto in self.datos_nivel['estrellasGigantes'] and punto not in estrellas_eliminadas:
+                es_recoleccion_estrella = True
+                poder_disponible = True  # Obtener poder
+                estrellas_eliminadas.append(punto)
+            
             # Actualizar pasos y energía
-            self.pasos += 1
-            self.carga_actual -= self.datos_nivel['matrizInicial'][punto[0]][punto[1]]
+            if i > 0:  # No contar el primer paso
+                self.pasos += 1
+                self.carga_actual -= self.datos_nivel['matrizInicial'][punto[0]][punto[1]]
             
             # Verificar zonas de recarga
             for recarga in self.datos_nivel['zonasRecarga']:
@@ -500,9 +520,26 @@ class JuegoMision:
                     self.mensaje = f"¡Recargando energía! Multiplicador: x{recarga[2]}"
                     self.mensaje_color = self.VERDE
             
+            # ELIMINAR TEMPORALMENTE los elementos de las listas durante la animación
+            estrellas_originales = self.datos_nivel['estrellasGigantes'].copy()
+            agujeros_originales = self.datos_nivel['agujerosNegros'].copy()
+            
+            # Remover elementos eliminados temporalmente
+            for estrella in estrellas_eliminadas:
+                if estrella in self.datos_nivel['estrellasGigantes']:
+                    self.datos_nivel['estrellasGigantes'].remove(estrella)
+            
+            for agujero in agujeros_eliminados:
+                if agujero in self.datos_nivel['agujerosNegros']:
+                    self.datos_nivel['agujerosNegros'].remove(agujero)
+            
             # Limpiar la pantalla y dibujar la interfaz completa
             self.pantalla.fill((30, 30, 30))
-            self.dibujar_matriz()
+            self.dibujar_matriz()  # Usar la función normal
+            
+            # Restaurar las listas originales
+            self.datos_nivel['estrellasGigantes'] = estrellas_originales
+            self.datos_nivel['agujerosNegros'] = agujeros_originales
             
             # Dibujar el rastro completo
             for j in range(len(self.rastro) - 1):
@@ -557,32 +594,91 @@ class JuegoMision:
             rect_nave = icono_nave.get_rect(center=(x, y))
             self.pantalla.blit(icono_nave, rect_nave)
             
-            # Dibujar barra lateral
-            self.dibujar_barra_lateral()
+            # ✨ EFECTO SIMPLE: RECOLECCIÓN DE ESTRELLA ✨
+            if es_recoleccion_estrella:
+                self.mensaje = " PODER ESTELAR OBTENIDO "
+                self.mensaje_color = (255, 215, 0)  # Dorado
+                
+                self.dibujar_barra_lateral()
+                pygame.display.flip()
+                
+                # EFECTO DE DESTELLO SIMPLE
+                self.efecto_destello_simple(x, y)
+                pygame.time.wait(1000)
             
-            # Actualizar pantalla
-            pygame.display.flip()
+            # 💥 EFECTO SIMPLE: DESTRUCCIÓN DE AGUJERO NEGRO 💥
+            elif es_destruccion_agujero:
+                self.mensaje = " AGUJERO NEGRO DESTRUIDO "
+                self.mensaje_color = (255, 69, 0)  # Rojo-naranja
+                
+                self.dibujar_barra_lateral()
+                pygame.display.flip()
+                
+                # EFECTO DE EXPLOSIÓN SIMPLE
+                self.efecto_explosion_simple(x, y)
+                pygame.time.wait(1000)
             
-            # Esperar un tiempo normal para movimientos regulares
-            if not es_gusano:
-                pygame.time.wait(400)
+            else:
+                self.dibujar_barra_lateral()
+                pygame.display.flip()
+                
+                if not es_gusano:
+                    pygame.time.wait(400)
             
             i += 1
             
         # Actualizar mensaje final
         if self.carga_actual > 0:
-            self.mensaje = f"¡Ruta completada! Energía restante: {int(self.carga_actual)}"
+            self.mensaje = f" MISIÓN COMPLETADA  Energía restante: {int(self.carga_actual)}"
             self.mensaje_color = self.VERDE
         else:
-            self.mensaje = "La nave se quedó sin energía"
+            self.mensaje = " La nave se quedó sin energía"
             self.mensaje_color = self.ROJO
             
         # Guardar la posición final de la nave
         self.posicion_final = self.ruta[-1]
         
+        # Actualizar las listas permanentemente para que no aparezcan al final
+        for estrella in estrellas_eliminadas:
+            if estrella in self.datos_nivel['estrellasGigantes']:
+                self.datos_nivel['estrellasGigantes'].remove(estrella)
+        
+        for agujero in agujeros_eliminados:
+            if agujero in self.datos_nivel['agujerosNegros']:
+                self.datos_nivel['agujerosNegros'].remove(agujero)
+        
+        # ✨ ACTUALIZAR MATRIZ AL LLEGAR A LA META ✨
+        if estrellas_eliminadas or agujeros_eliminados:
+            # Limpiar superficie de matriz para forzar redibujado con elementos eliminados
+            self.superficie_matriz = None
+        
         # Dibujar estado final
         self.dibujar_interfaz()
         pygame.display.flip()
+
+    def efecto_destello_simple(self, x, y):
+        """Efecto simple de destello dorado para recoger estrella"""
+        for i in range(5):  # Solo 5 frames
+            # Crear círculo dorado simple
+            radio = 20 + i * 8
+            color = (255, 215, 0)  # Dorado
+            
+            # Dibujar círculo simple
+            pygame.draw.circle(self.pantalla, color, (x, y), radio, 3)
+            pygame.display.flip()
+            pygame.time.wait(100)
+    
+    def efecto_explosion_simple(self, x, y):
+        """Efecto simple de explosión roja para destruir agujero negro"""
+        for i in range(5):  # Solo 5 frames
+            # Crear círculo rojo simple
+            radio = 15 + i * 10
+            color = (255, 69, 0)  # Rojo-naranja
+            
+            # Dibujar círculo simple
+            pygame.draw.circle(self.pantalla, color, (x, y), radio, 4)
+            pygame.display.flip()
+            pygame.time.wait(120)
 
     def buscar_ruta(self):
         """Inicia la búsqueda de una ruta"""
@@ -759,17 +855,6 @@ class JuegoMision:
             if [x, y] == recarga[:2]:
                 return 'recarga'
         return None
-        
-    def actualizar_zoom_y_posicion(self):
-        """Actualiza suavemente el zoom y la posición"""
-        # Actualizar zoom con suavizado
-        if abs(self.zoom - self.zoom_objetivo) > 0.001:
-            self.zoom += (self.zoom_objetivo - self.zoom) * 0.1
-        
-        # Actualizar posición con suavizado
-        if not self.arrastrando:
-            self.offset_x += (self.offset_objetivo_x - self.offset_x) * self.suavizado_movimiento
-            self.offset_y += (self.offset_objetivo_y - self.offset_y) * self.suavizado_movimiento
 
     def dibujar_leyenda(self):
         """Dibuja la leyenda del juego"""
@@ -813,25 +898,6 @@ class JuegoMision:
         finally:
             self.salir()
 
-    def animar_retroceso(self, punto_actual, punto_anterior):
-        """Anima el retroceso del backtracking"""
-        # Mostrar mensaje de retroceso
-        self.mensaje = "Retrocediendo para buscar otro camino..."
-        self.mensaje_color = self.AMARILLO
-        
-        # Calcular coordenadas en pantalla
-        offset_x = (self.AREA_MATRIZ.width - (self.tamaño_celda * self.datos_nivel['matriz']['columnas'])) // 2
-        offset_y = (self.AREA_MATRIZ.height - (self.tamaño_celda * self.datos_nivel['matriz']['filas'])) // 2
-        
-        x1 = self.AREA_MATRIZ.left + offset_x + punto_anterior[1] * self.tamaño_celda + self.tamaño_celda // 2
-        y1 = self.AREA_MATRIZ.top + offset_y + punto_anterior[0] * self.tamaño_celda + self.tamaño_celda // 2
-        x2 = self.AREA_MATRIZ.left + offset_x + punto_actual[1] * self.tamaño_celda + self.tamaño_celda // 2
-        y2 = self.AREA_MATRIZ.top + offset_y + punto_actual[0] * self.tamaño_celda + self.tamaño_celda // 2
-        
-        # Animar el retroceso con una línea roja
-        pygame.draw.line(self.pantalla, self.ROJO, (x1, y1), (x2, y2), 3)
-        pygame.display.flip()
-        pygame.time.wait(300)  # Pequeña pausa para visualizar el retroceso
 
     def mostrar_estadisticas(self):
         """Muestra estadísticas en la barra lateral"""

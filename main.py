@@ -5,8 +5,6 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
 from PyQt6.QtCore import Qt, QSize
 from PyQt6.QtGui import QIcon, QFont, QPixmap
 from juego_mision.juego import JuegoMision
-from automata_sintaxis.interfaz import InterfazAFD
-import pygame
 
 class MenuPrincipal(QMainWindow):
     def __init__(self):
@@ -49,12 +47,6 @@ class MenuPrincipal(QMainWindow):
             #boton-juego:hover {
                 background-color: #0066CC;
             }
-            #boton-analizador {
-                background-color: #5856D6;
-            }
-            #boton-analizador:hover {
-                background-color: #4744CA;
-            }
             #boton-salir {
                 background-color: #FF3B30;
             }
@@ -80,7 +72,7 @@ class MenuPrincipal(QMainWindow):
         layout.addWidget(titulo)
         
         # Descripción
-        descripcion = QLabel("Seleccione el módulo que desea ejecutar")
+        descripcion = QLabel("¡Embárcate en una misión interestelar!")
         descripcion.setObjectName("descripcion")
         descripcion.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(descripcion)
@@ -91,21 +83,13 @@ class MenuPrincipal(QMainWindow):
         separador.setStyleSheet("background-color: #333333;")
         layout.addWidget(separador)
         
-        # Botones
+        # Botón del juego
         btn_juego = QPushButton("  Misión Interestelar")
         btn_juego.setObjectName("boton-juego")
         btn_juego.setIcon(QIcon("assets/icons/rocket.png"))
         btn_juego.setIconSize(QSize(32, 32))
         btn_juego.clicked.connect(self.iniciar_juego)
         layout.addWidget(btn_juego)
-        
-        # Botón AFDs
-        btn_analizador = QPushButton("  Validador AFDs")
-        btn_analizador.setObjectName("boton-analizador")
-        btn_analizador.setIcon(QIcon("assets/icons/code.png"))
-        btn_analizador.setIconSize(QSize(32, 32))
-        btn_analizador.clicked.connect(self.iniciar_analizador)
-        layout.addWidget(btn_analizador)
         
         # Botón Salir
         btn_salir = QPushButton("  Salir")
@@ -126,46 +110,11 @@ class MenuPrincipal(QMainWindow):
         self.juego = JuegoMision()
         self.juego.ejecutar()
         self.close()
-        
-    def iniciar_analizador(self):
-        """Inicia el validador de AFDs"""
-        self.hide()
-        self.analizador = InterfazAFD()
-        self.analizador.ejecutar()
-        # No cerramos la ventana principal aquí
 
     def salir(self):
         """Cierra completamente la aplicación"""
         QApplication.quit()
         sys.exit(0)
-
-    def validar_nivel(self, datos):
-        # Validar mínimo de estrellas gigantes
-        if len(datos['estrellasGigantes']) < 5:
-            raise ValueError("El nivel debe tener al menos 5 estrellas gigantes")
-        
-        # Validar valores de energía
-        for fila in datos['matrizInicial']:
-            for valor in fila:
-                if valor < 1 or valor > 10:
-                    raise ValueError("Los valores de energía deben estar entre 1 y 10")
-
-    def destruir_agujero_negro(self, pos_estrella):
-        # Obtener agujeros negros adyacentes
-        adyacentes = self.obtener_agujeros_negros_adyacentes(pos_estrella)
-        if adyacentes:
-            # Destruir solo el primer agujero negro encontrado
-            self.datos_nivel['agujerosNegros'].remove(adyacentes[0])
-            return True
-        return False
-
-    def usar_agujero_gusano(self, entrada, salida):
-        for i, gusano in enumerate(self.datos_nivel['agujerosGusano']):
-            if gusano['entrada'] == entrada and gusano['salida'] == salida:
-                # Eliminar el agujero de gusano después de usarlo
-                self.datos_nivel['agujerosGusano'].pop(i)
-                return True
-        return False
 
 def main():
     app = QApplication(sys.argv)
